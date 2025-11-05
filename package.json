@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
+    "build": "tsc",
     "start": "node --enable-source-maps dist/index.js",
-    "build": "tsc"
+    "prod": "yarn build && yarn start"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
