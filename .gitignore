@@ -6,6 +6,5 @@ dist
 bot-stats.json
 stats.json
 last.json
-
-
+.http_cache
 

@@ -7,6 +7,8 @@ import { getProxy } from './proxy.js'
 import { COUNTRY_TO_LOCALE, pickRandomCountry } from './countries.js'
 import { debug, info, error } from './logger.js'
 import type { Route } from 'playwright'
+import path from 'path'
+import { createHash } from 'crypto'
 
 chromium.use(stealth())
 
@@ -65,13 +67,74 @@ class TaskQueue<T> {
   }
 }
 
+const CACHE_DIR = process.env.CACHE_DIR || '.http_cache'
+function keyFor(method: string, url: string) {
+  return createHash('sha256').update(method.toUpperCase() + ' ' + url).digest('hex')
+}
+function filePathsFor(key: string) {
+  const a = key.slice(0, 2)
+  const b = key.slice(2, 4)
+  const dir = path.join(CACHE_DIR, a, b)
+  return { dir, body: path.join(dir, key + '.body'), meta: path.join(dir, key + '.json') }
+}
+async function readCached(method: string, url: string) {
+  try {
+    const key = keyFor(method, url)
+    const p = filePathsFor(key)
+    const [metaRaw, body] = await Promise.all([
+      fs.promises.readFile(p.meta, 'utf8'),
+      fs.promises.readFile(p.body)
+    ])
+    const meta = JSON.parse(metaRaw)
+    return { status: meta.status as number, headers: meta.headers as Record<string, string>, body }
+  } catch { return null }
+}
+async function writeCached(method: string, url: string, status: number, headers: Record<string, string>, body: Buffer) {
+  try {
+    const key = keyFor(method, url)
+    const p = filePathsFor(key)
+    await fs.promises.mkdir(p.dir, { recursive: true })
+    const meta = JSON.stringify({ url, method, status, headers })
+    const tmpB = p.body + '.tmp'
+    const tmpM = p.meta + '.tmp'
+    await fs.promises.writeFile(tmpB, body)
+    await fs.promises.writeFile(tmpM, meta, 'utf8')
+    await Promise.all([
+      fs.promises.rename(tmpB, p.body),
+      fs.promises.rename(tmpM, p.meta)
+    ])
+  } catch {}
+}
+
 async function searchOnce(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<SearchItem[]> {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage } })
   try {
-    await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico)(?:[?#]|$)/i, (route: Route) => route.abort())
-    await context.route('**/*', (route: Route) => {
-      if (route.request().resourceType() === 'font') return route.abort()
-      return route.continue()
+    await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico|svg)(?:[?#]|$)/i, (route: Route) => route.abort())
+    let captchaReject: ((e: any) => void) | null = null
+    const captchaPromise = new Promise<never>((_, reject) => { captchaReject = reject })
+    await context.route('**/*', async (route: Route) => {
+      const req = route.request()
+      if (req.resourceType() === 'font') return route.abort()
+      if (/captcha/i.test(req.url())) {
+        captchaReject?.(new Error('captcha'))
+        return route.abort()
+      }
+      if (req.resourceType() === 'document') return route.continue()
+      const method = req.method()
+      if (method !== 'GET' && method !== 'HEAD') return route.continue()
+      const url = req.url()
+      const hit = await readCached(method, url)
+      if (hit) {
+        debug('cache_hit', { url })
+        return route.fulfill({ status: hit.status, headers: hit.headers, body: method === 'HEAD' ? undefined : hit.body })
+      }
+      const resp = await route.fetch()
+      const status = resp.status()
+      const headers = await resp.headers()
+      const body = method === 'HEAD' ? Buffer.alloc(0) : await resp.body()
+      route.fulfill({ status, headers, body })
+      const ct = String((headers as any)['content-type'] || '')
+      if (!/html/i.test(ct)) writeCached(method, url, status, headers as any, body).catch(() => {})
     })
     await context.addInitScript(() => {
       delete (window as any).navigator.webdriver
@@ -90,20 +153,17 @@ async function searchOnce(browser: any, locale: string, acceptLanguage: string, 
     })
     const page = await context.newPage()
     if (signal?.aborted) throw new Error('aborted')
-    let needRelaunch = false
-    page.on('framenavigated', (frame: any) => {
-      try { if (frame === page.mainFrame() && /captcha/i.test(frame.url())) needRelaunch = true } catch {}
-    })
     const abortPromise = new Promise<never>((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted'))))
     const url = `https://ya.ru/search/?text=${encodeURIComponent(query)}`
     await Promise.race([
       page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs }),
-      abortPromise
+      abortPromise,
+      captchaPromise
     ])
-    if (needRelaunch) throw new Error('captcha')
     await Promise.race([
       page.waitForSelector('h2#RelatedBottom', { timeout: timeoutMs }),
-      abortPromise
+      abortPromise,
+      captchaPromise
     ])
     // If requested, wait for Futuris AI answer to mount
     if (getAiAnswer) {
