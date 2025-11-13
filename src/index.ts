@@ -67,14 +67,13 @@ class TaskQueue<T> {
   }
 }
 
-const CACHE_DIR = process.env.CACHE_DIR || '.http_cache'
 function keyFor(method: string, url: string) {
   return createHash('sha256').update(method.toUpperCase() + ' ' + url).digest('hex')
 }
 function filePathsFor(key: string) {
   const a = key.slice(0, 2)
   const b = key.slice(2, 4)
-  const dir = path.join(CACHE_DIR, a, b)
+  const dir = path.join('.http_cache', a, b)
   return { dir, body: path.join(dir, key + '.body'), meta: path.join(dir, key + '.json') }
 }
 async function readCached(method: string, url: string) {
@@ -228,7 +227,7 @@ async function searchOnce(browser: any, locale: string, acceptLanguage: string, 
     })
     return items
   } finally {
-    // try { await context.close() } catch {}
+    try { await context.close() } catch {}
   }
 }
 
@@ -304,21 +303,17 @@ function startWorkers(n: number) {
 async function orchestrateSearch(query: string, getAiAnswer: boolean): Promise<SearchItem[]> {
   const TOTAL_MS = Number(36000)
   const ATTEMPT_MS = Math.max(1000, Math.floor(TOTAL_MS / 4))
-  const attemptOne = (): Promise<SearchItem[]> => {
-    const c = new AbortController()
-    const p = queue.enqueue({ query, timeoutMs: ATTEMPT_MS, getAiAnswer, signal: c.signal }) as Promise<SearchItem[]>
-    return p.finally(() => c.abort())
-  }
   const attemptParallel = (): Promise<SearchItem[]> => {
-    const c1 = new AbortController()
-    const c2 = new AbortController()
-    const p1 = queue.enqueue({ query, timeoutMs: ATTEMPT_MS, getAiAnswer, signal: c1.signal }) as Promise<SearchItem[]>
-    const p2 = queue.enqueue({ query, timeoutMs: ATTEMPT_MS, getAiAnswer, signal: c2.signal }) as Promise<SearchItem[]>
-    const raced = Promise.any<SearchItem[]>([p1, p2])
-    raced.finally(() => { c1.abort(); c2.abort() })
+    const parallel = Math.max(1, Number(process.env.PARALLEL_REQUESTS || 2))
+    const controllers = Array.from({ length: parallel }, () => new AbortController())
+    const promises = controllers.map(c =>
+      queue.enqueue({ query, timeoutMs: ATTEMPT_MS, getAiAnswer, signal: c.signal }) as Promise<SearchItem[]>
+    )
+    const raced = Promise.any<SearchItem[]>(promises)
+    raced.finally(() => { controllers.forEach(c => c.abort()) })
     return raced
   }
-  try { return await attemptOne() } catch {}
+  try { return await attemptParallel() } catch {}
   try { return await attemptParallel() } catch {}
   try { return await attemptParallel() } catch {}
   return attemptParallel()
@@ -348,7 +343,7 @@ function startServer(port: number) {
         debug('request_respond', { items: (result as any[])?.length })
         stats.success++
         if (process.env.DEBUG) {
-          try { await fs.promises.writeFile(process.env.LAST_FILE || 'last.json', JSON.stringify(result, null, '\t')) } catch (e) { error('last_write_error', (e as any)?.message || e) }
+          try { await fs.promises.writeFile('last.json', JSON.stringify(result, null, '\t')) } catch (e) { error('last_write_error', (e as any)?.message || e) }
         }
         res.statusCode = 200
         res.setHeader('Content-Type', 'application/json')
@@ -372,14 +367,13 @@ function startServer(port: number) {
 }
 
 const PORT = Number(process.env.PORT || 3000)
-const NUMBER_OF_BROWSERS = Math.max(1, Number(process.env.NUMBER_OF_BROWSERS || 2))
-startWorkers(NUMBER_OF_BROWSERS)
+const NUMBER_OF_WORKERS = Math.max(1, Number(process.env.NUMBER_OF_WORKERS || 2))
+startWorkers(NUMBER_OF_WORKERS)
 startServer(PORT)
 
 const stats = { success: 0, failure: 0 }
-const STATS_FILE = process.env.STATS_FILE || 'stats.json'
 setInterval(() => {
-  try { fs.writeFileSync(STATS_FILE, JSON.stringify(stats)) } catch (e) { error('stats_write_error', (e as any)?.message || e) }
+  try { fs.writeFileSync('stats.json', JSON.stringify(stats)) } catch (e) { error('stats_write_error', (e as any)?.message || e) }
 }, 60_000)
 
 process.on('unhandledRejection', err => {
