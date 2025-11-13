@@ -1,8 +1,7 @@
 import type { Route } from 'playwright'
-import type { SearchItem } from '../types.js'
 import { readCached, writeCached } from '../core/cache.js'
 
-export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<SearchItem[]> {
+export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
   const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage } })
   try {
     await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico|svg)(?:[?#]|$)/i, (route: Route) => route.abort())
@@ -95,12 +94,13 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
     ])
     let aiText = ''
     try {
-      aiText = await page.$eval('.FuturisMarkdown', (el: any) => (el.textContent || '').trim())
+      aiText = await page.$$eval('.FuturisMarkdown', (els: any[]) =>
+        (els as HTMLElement[]).map(el => (el as HTMLElement).innerText.trim()).filter(Boolean).join('\n\n')
+      )
     } catch {}
-    const items: SearchItem[] = [{ text: aiText, links: [] }]
-    return items
+    return aiText
   } finally {
-    try { await context.close() } catch {}
+    // try { await context.close() } catch {}
   }
 }
 

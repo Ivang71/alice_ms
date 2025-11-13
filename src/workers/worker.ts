@@ -3,7 +3,6 @@ import { chromeArgs } from '../config/chromeArgs.js'
 import { getProxy } from '../config/proxy.js'
 import { COUNTRY_TO_LOCALE, pickRandomCountry } from '../config/countries.js'
 import { debug, error } from '../core/logger.js'
-import type { SearchItem } from '../types.js'
 import { searchAlice } from '../execution/alice.js'
 import type { TaskQueue } from '../core/taskQueue.js'
 
@@ -28,26 +27,26 @@ export class BrowserWorker {
       try {
         if (!this.browser) await this.launch()
         debug('worker_search_start', { worker: this.id, country: this.country, q: task.value.query })
-        const items = await this.performSearch(task.value.query, task.value.timeoutMs, task.value.signal, task.value.getAiAnswer)
-        task.resolve(items)
+        const text = await this.performSearch(task.value.query, task.value.timeoutMs, task.value.signal, task.value.getAiAnswer)
+        task.resolve(text)
       } catch (err) {
         task.reject(err)
       }
     }
   }
-  private async performSearch(query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<SearchItem[]> {
+  private async performSearch(query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
     try {
-      const items = await searchAlice(this.browser, this.locale, this.acceptLanguage, query, timeoutMs, signal, getAiAnswer)
-      debug('worker_search_ok', { worker: this.id, items: items.length })
-      return items
+      const text = await searchAlice(this.browser, this.locale, this.acceptLanguage, query, timeoutMs, signal, getAiAnswer)
+      debug('worker_search_ok', { worker: this.id, length: text.length })
+      return text
     } catch (err) {
       if ((err as any)?.message === 'aborted') throw err
       error('worker_search_error_relaunch', { worker: this.id })
       await this.relaunch()
       try {
-        const items = await searchAlice(this.browser, this.locale, this.acceptLanguage, query, timeoutMs, signal, getAiAnswer)
-        debug('worker_search_ok_after_relaunch', { worker: this.id, items: items.length })
-        return items
+        const text = await searchAlice(this.browser, this.locale, this.acceptLanguage, query, timeoutMs, signal, getAiAnswer)
+        debug('worker_search_ok_after_relaunch', { worker: this.id, length: text.length })
+        return text
       } catch (e) {
         if ((e as any)?.message === 'aborted') throw e
         error('worker_search_error_fail', { worker: this.id, error: (e as any)?.message || e })

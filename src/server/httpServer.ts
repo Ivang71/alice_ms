@@ -26,14 +26,14 @@ export function startServer(port: number) {
       debug('request_received', { q, getAiAnswer })
       try {
         const result = await orchestrateSearch(q, getAiAnswer)
-        debug('request_respond', { items: (result as any[])?.length })
+        debug('request_respond', { textLen: result.length })
         stats.success++
         if (process.env.DEBUG) {
           try { await fs.promises.writeFile('last.json', JSON.stringify(result, null, '\t')) } catch (e) { error('last_write_error', (e as any)?.message || e) }
         }
         res.statusCode = 200
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify(result))
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.end(result)
       } catch (e) {
         stats.failure++
         error('request_error', { error: (e as any)?.stack || (e as any)?.message || e })
