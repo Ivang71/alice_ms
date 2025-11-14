@@ -100,7 +100,7 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
     } catch {}
     return aiText
   } finally {
-    // try { await context.close() } catch {}
+    try { await context.close() } catch {}
   }
 }
 

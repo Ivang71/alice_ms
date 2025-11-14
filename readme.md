@@ -5,7 +5,7 @@ curl -G --data-urlencode 'q=директор по продажам Dalli' http:/
 ```
 
 run only via
-```
+```bash
 yarn prod
 ```
 
