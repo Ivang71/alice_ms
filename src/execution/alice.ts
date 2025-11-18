@@ -1,6 +1,7 @@
+import fs from 'fs'
 import type { Route } from 'playwright'
 import { readCached, writeCached } from '../core/cache.js'
-import { debug } from '../core/logger.js'
+import { debug, isDebug } from '../core/logger.js'
 
 export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
   debug('alice_search_start', { query, locale, timeoutMs, getAiAnswer })
@@ -105,6 +106,15 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       )
     } catch (e) {
       debug('alice_markdown_error', { query, error: (e as any)?.message || e })
+    }
+    if (!aiText && isDebug) {
+      try {
+        const html = await page.content()
+        await fs.promises.writeFile('last.html', html, 'utf8')
+        debug('alice_page_saved', { query })
+      } catch (e) {
+        debug('alice_page_save_error', { query, error: (e as any)?.message || e })
+      }
     }
     const len = aiText ? aiText.length : 0
     debug('alice_search_done', { query, getAiAnswer, textLen: len })
