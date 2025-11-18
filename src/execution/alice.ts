@@ -5,7 +5,14 @@ import { debug, isDebug } from '../core/logger.js'
 
 export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
   debug('alice_search_start', { query, locale, timeoutMs, getAiAnswer })
-  const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage }, viewport: { width: 360, height: 640 }, deviceScaleFactor: 1, isMobile: true })
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    locale,
+    extraHTTPHeaders: { 'Accept-Language': acceptLanguage },
+    ...(isDebug ? {} : { viewport: { width: 360, height: 640 } }),
+    deviceScaleFactor: 1,
+    isMobile: true
+  })
   try {
     await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico|svg)(?:[?#]|$)/i, (route: Route) => route.abort())
     let captchaReject: ((e: any) => void) | null = null
@@ -73,7 +80,9 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
     ])
     const selector = '.AliceInput input, input.AliceInput, .AliceInput textarea, textarea.AliceInput'
     try {
-      await page.fill(selector, query, { timeout: Math.max(500, Math.floor(timeoutMs / 2)) })
+      await page.focus(selector)
+      if (signal?.aborted) throw new Error('aborted')
+      await page.type(selector, query, { delay: 40 })
     } catch {}
     try {
       await page.focus(selector)
@@ -121,7 +130,7 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
     if (!aiText) debug('alice_search_empty', { query, getAiAnswer })
     return aiText
   } finally {
-    try { await context.close() } catch {}
+    // try { await context.close() } catch {}
   }
 }
 
