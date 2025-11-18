@@ -1,7 +1,9 @@
 import type { Route } from 'playwright'
 import { readCached, writeCached } from '../core/cache.js'
+import { debug } from '../core/logger.js'
 
 export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
+  debug('alice_search_start', { query, locale, timeoutMs, getAiAnswer })
   const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage }, viewport: { width: 360, height: 640 }, deviceScaleFactor: 1, isMobile: true })
   try {
     await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico|svg)(?:[?#]|$)/i, (route: Route) => route.abort())
@@ -11,6 +13,7 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       const req = route.request()
       if (req.resourceType() === 'font') return route.abort()
       if (/captcha/i.test(req.url())) {
+        debug('alice_captcha', { url: req.url() })
         captchaReject?.(new Error('captcha'))
         return route.abort()
       }
@@ -20,6 +23,7 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       const url = req.url()
       const hit = await readCached(method, url)
       if (hit) {
+        debug('alice_cache_hit', { method, url, status: hit.status })
         return route.fulfill({ status: hit.status, headers: hit.headers, body: method === 'HEAD' ? undefined : hit.body })
       }
       const resp = await route.fetch()
@@ -46,8 +50,14 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       } catch {}
     })
     const page = await context.newPage()
-    if (signal?.aborted) throw new Error('aborted')
-    const abortPromise = new Promise<never>((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted'))))
+    if (signal?.aborted) {
+      debug('alice_aborted_before_start', { query })
+      throw new Error('aborted')
+    }
+    const abortPromise = new Promise<never>((_, reject) => signal?.addEventListener('abort', () => {
+      debug('alice_aborted_during_search', { query })
+      reject(new Error('aborted'))
+    }))
     const url = `https://alice.yandex.ru/`
     await Promise.race([
       page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs }),
@@ -97,7 +107,12 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       aiText = await page.$$eval('.FuturisMarkdown', (els: any[]) =>
         (els as HTMLElement[]).map(el => (el as HTMLElement).innerText.trim()).filter(Boolean).join('\n\n')
       )
-    } catch {}
+    } catch (e) {
+      debug('alice_markdown_error', { query, error: (e as any)?.message || e })
+    }
+    const len = aiText ? aiText.length : 0
+    debug('alice_search_done', { query, getAiAnswer, textLen: len })
+    if (!aiText) debug('alice_search_empty', { query, getAiAnswer })
     return aiText
   } finally {
     try { await context.close() } catch {}

@@ -1,7 +1,7 @@
 import { createServer } from 'http'
 import fs from 'fs'
 import { URL } from 'url'
-import { debug, error, info } from '../core/logger.js'
+import { debug, error, info, isDebug } from '../core/logger.js'
 import { orchestrateSearch } from '../core/orchestrator.js'
 import { stats } from '../core/stats.js'
 
@@ -10,6 +10,7 @@ export function startServer(port: number) {
     try {
       const url = new URL(req.url || '', `http://${req.headers.host}`)
       if (req.method !== 'GET' || url.pathname !== '/search') {
+        debug('request_unhandled', { method: req.method, url: req.url })
         res.statusCode = 404
         res.end()
         return
@@ -18,6 +19,7 @@ export function startServer(port: number) {
       const getAiAnswerParam = url.searchParams.get('getAiAnswer')
       const getAiAnswer = getAiAnswerParam == null ? true : !/^(0|false)$/i.test(getAiAnswerParam)
       if (!q) {
+        debug('request_missing_q', { rawQ: url.searchParams.get('q') })
         res.statusCode = 400
         res.setHeader('Content-Type', 'application/json')
         res.end(JSON.stringify({ error: 'missing q' }))
@@ -26,9 +28,11 @@ export function startServer(port: number) {
       debug('request_received', { q, getAiAnswer })
       try {
         const result = await orchestrateSearch(q, getAiAnswer)
-        debug('request_respond', { textLen: result.length })
+        const len = result ? result.length : 0
+        debug('request_respond', { textLen: len })
+        if (len === 0) debug('request_respond_empty', { q, getAiAnswer })
         stats.success++
-        if (process.env.DEBUG) {
+        if (isDebug) {
           try { await fs.promises.writeFile('last.json', JSON.stringify(result, null, '\t')) } catch (e) { error('last_write_error', (e as any)?.message || e) }
         }
         res.statusCode = 200
