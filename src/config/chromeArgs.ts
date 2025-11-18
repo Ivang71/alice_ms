@@ -26,7 +26,9 @@ export function chromeArgs(): string[] {
     '--disable-renderer-backgrounding',
     '--disable-features=VizDisplayCompositor',
     '--ignore-certificate-errors',
-    '--disable-infobars'
+    '--disable-infobars',
+    '--memory-pressure-off',
+    `--js-flags=--max_old_space_size=1024`
   ]
 }
 

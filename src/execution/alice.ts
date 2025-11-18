@@ -2,7 +2,7 @@ import type { Route } from 'playwright'
 import { readCached, writeCached } from '../core/cache.js'
 
 export async function searchAlice(browser: any, locale: string, acceptLanguage: string, query: string, timeoutMs: number, signal: AbortSignal | undefined, getAiAnswer: boolean): Promise<string> {
-  const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage } })
+  const context = await browser.newContext({ ignoreHTTPSErrors: true, locale, extraHTTPHeaders: { 'Accept-Language': acceptLanguage }, viewport: { width: 360, height: 640 }, deviceScaleFactor: 1, isMobile: true })
   try {
     await context.route(/\.(?:jpg|jpeg|webp|woff|woff2|eot|ttf|otf|ico|svg)(?:[?#]|$)/i, (route: Route) => route.abort())
     let captchaReject: ((e: any) => void) | null = null
