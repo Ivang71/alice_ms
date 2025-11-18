@@ -22,10 +22,6 @@ export async function searchAlice(browser: any, locale: string, acceptLanguage: 
       if (method !== 'GET' && method !== 'HEAD') return route.continue()
       const url = req.url()
       const hit = await readCached(method, url)
-      if (hit) {
-        debug('alice_cache_hit', { method, url, status: hit.status })
-        return route.fulfill({ status: hit.status, headers: hit.headers, body: method === 'HEAD' ? undefined : hit.body })
-      }
       const resp = await route.fetch()
       const status = resp.status()
       const headers = resp.headers()
