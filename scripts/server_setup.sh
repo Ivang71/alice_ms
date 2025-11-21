@@ -63,6 +63,8 @@ fi
 
 sudo systemctl enable --now caddy
 
+sudo systemctl reload caddy || true
+
 echo "Dependencies installed with yarn"
 echo "Caddy is configured for https://$DOMAIN -> http://127.0.0.1:$PORT"
 echo "Run the app with: PORT=$PORT yarn prod"
