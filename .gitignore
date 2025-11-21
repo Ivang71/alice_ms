@@ -8,4 +8,5 @@ stats.json
 last.json
 .http_cache
 *.html
+api_keys.json
 

@@ -4,11 +4,22 @@ import { URL } from 'url'
 import { debug, error, info, isDebug } from '../core/logger.js'
 import { orchestrateSearch } from '../core/orchestrator.js'
 import { stats } from '../core/stats.js'
+import { isValidApiKey } from '../config/apiKeys.js'
 
 export function startServer(port: number) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url || '', `http://${req.headers.host}`)
+      const apiKeyHeader = (req.headers['x-api-key'] as string | undefined) || undefined
+      const apiKeyQuery = url.searchParams.get('api_key') || undefined
+      const apiKey = apiKeyHeader || apiKeyQuery
+      if (!isValidApiKey(apiKey)) {
+        debug('auth_failed', { ip: req.socket.remoteAddress, keyPresent: !!apiKey })
+        res.statusCode = 401
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ error: 'unauthorized' }))
+        return
+      }
       if (req.method !== 'GET' || url.pathname !== '/search') {
         debug('request_unhandled', { method: req.method, url: req.url })
         res.statusCode = 404
