@@ -7,8 +7,7 @@ export const queue = new TaskQueue<TaskPayload>()
 export async function orchestrateSearch(query: string, getAiAnswer: boolean): Promise<string> {
   const TOTAL_MS = Number(36000)
   const ATTEMPT_MS = Math.max(1000, Math.floor(TOTAL_MS / 4))
-  const attemptParallel = (): Promise<string> => {
-    const parallel = Math.max(1, Number(process.env.PARALLEL_REQUESTS || 2))
+  const attemptParallel = (parallel: number): Promise<string> => {
     debug('orchestrator_attempt_start', { query, getAiAnswer, parallel, timeoutMs: ATTEMPT_MS })
     const controllers = Array.from({ length: parallel }, () => new AbortController())
     const promises = controllers.map(c =>
@@ -26,10 +25,16 @@ export async function orchestrateSearch(query: string, getAiAnswer: boolean): Pr
       .finally(() => { controllers.forEach(c => c.abort()) })
     return raced
   }
-  try { return await attemptParallel() } catch {}
-  try { return await attemptParallel() } catch {}
-  try { return await attemptParallel() } catch {}
-  return attemptParallel()
+  let attempt = 0
+  for (;;) {
+    const parallel = attempt === 0 ? 1 : 2
+    try {
+      return await attemptParallel(parallel)
+    } catch (err) {
+      debug('orchestrator_attempt_retry', { query, getAiAnswer, attempt, parallel, error: (err as any)?.message || err })
+      attempt++
+    }
+  }
 }
 
 
