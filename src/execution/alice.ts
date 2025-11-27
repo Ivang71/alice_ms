@@ -49,8 +49,7 @@ export async function searchAliceWithContext(context: any, page: any, locale: st
       route.fulfill({ status, headers, body })
       const ct = String((headers as any)['content-type'] || '')
       if (!/html/i.test(ct)) writeCached(method, url, status, headers as any, body).catch(() => {})
-    } catch (e) {
-      debug('alice_route_error', { error: (e as any)?.message || e })
+    } catch {
       try { await route.abort() } catch {}
     }
   })
@@ -123,18 +122,31 @@ export async function searchAliceWithContext(context: any, page: any, locale: st
     abortPromise,
     captchaPromise
   ])
-  let aiText = ''
-  try {
-    aiText = await page.$$eval('.FuturisMarkdown', (els: any[]) =>
+  const readText = async () =>
+    page.$$eval('.FuturisMarkdown', (els: any[]) =>
       (els as HTMLElement[]).map(el => (el as HTMLElement).innerText.trim()).filter(Boolean).join('\n\n')
     )
-  } catch (e) {
-    debug('alice_markdown_error', { query, error: (e as any)?.message || e })
+  let aiText = ''
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      aiText = await readText()
+    } catch (e) {
+      debug('alice_markdown_error', { query, attempt, error: (e as any)?.message || e })
+    }
+    if (aiText) break
+    if (attempt === 0) {
+      await Promise.race([
+        page.waitForTimeout(500).catch(() => null),
+        abortPromise,
+        captchaPromise
+      ]).catch(() => null)
+    }
   }
   if (!aiText && isDebug) {
     try {
       const html = await page.content()
       await fs.promises.writeFile('last.html', html, 'utf8')
+      await page.screenshot({ path: 'last.png', fullPage: true }).catch(() => {})
       debug('alice_page_saved', { query })
     } catch (e) {
       debug('alice_page_save_error', { query, error: (e as any)?.message || e })
