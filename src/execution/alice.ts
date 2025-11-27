@@ -154,7 +154,10 @@ export async function searchAliceWithContext(context: any, page: any, locale: st
   }
   const len = aiText ? aiText.length : 0
   debug('alice_search_done', { query, getAiAnswer, textLen: len })
-  if (!aiText) debug('alice_search_empty', { query, getAiAnswer })
+  if (!aiText) {
+    debug('alice_search_empty', { query, getAiAnswer })
+    throw new Error('alice_empty')
+  }
   return aiText
 }
 

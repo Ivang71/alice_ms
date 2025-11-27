@@ -68,7 +68,12 @@ export class BrowserWorker {
         return text
       }
     } catch (err) {
-      if ((err as any)?.message === 'aborted') throw err
+      const msg = (err as any)?.message
+      if (msg === 'aborted') throw err
+      if (msg === 'alice_empty') {
+        error('worker_search_empty_error', { worker: this.id })
+        throw err
+      }
       error('worker_search_error_relaunch', { worker: this.id })
       await this.relaunch()
       try {
